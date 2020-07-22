@@ -73,7 +73,7 @@ def to_scale_dict(line, head):
         scale[n] = line[head.index(n)] if n in head else None
     return(scale)
 
-def autocorrelating_scales(scales, threshold):
+def correlating_scales(scales, threshold):
     # Convert to pandas df
     scaledf = pandas.DataFrame({s['name']: [s['scale'][aa] for aa in AA] 
                                                               for s in scales})
@@ -119,8 +119,9 @@ def parse_scales(path, retainthreshold):
         scales = [to_scale_dict(line, head) for line in reader]
     
     if retainthreshold < 1:
-        acscales = autocorrelating_scales(scales, retainthreshold)
+        acscales = correlating_scales(scales, retainthreshold)
         scales = [s for s in scales if s['name'] not in acscales]
+        print(f"Removed highly correlating scales {', '.join(acscales)}")
     
     return(scales)
 
@@ -164,25 +165,32 @@ def getcliargs(arglist = None):
     
     parser = argparse.ArgumentParser(description="""
         description:
+        This script calculates amino acid scale values for supplied sequences.
+        Supply one or more nucleotide sequences in fasta format on STDIN, and
+        the path to a csv of protein scales to -s/--scales. All nucleotide
+        sequences must share the same NCBI translation table and the same
+        reading frame.
         |n
-        Text
+        The protein scale csv must be formatted as follows. The first line 
+        must be column headings that include 'name' and every amino acid in 
+        capitalised single-letter format, and may also include 'type', 
+        'description' and 'reference', which are parsed but not currently used.
+        Columns may be in any order, and any other columns are permitted but
+        will be ignored. Each row should be a different scale with a unique 
+        name and amino acid values in positions corresponding to the header 
+        row.
         |n
-        Text
+        Optionally, protein scales can be filtered for high pairwise 
+        correlations to remove redundancy in the dataset. For any pairwise
+        correlations greater than the value given to -m/--maxcorrelation, 
+        the scale with the greater mean correlation is dropped.
         """,formatter_class=MultilineFormatter)
     
     parser._optionals.title = "arguments"
     
     parser.add_argument('-s', '--scales', metavar = 'path',
                         help = 'path to a tabular csv file containing protein '
-                               'scale values.The first line must be column '
-                               'headings that include \'name\' and every '
-                               'amino acid in capitalised single-letter '
-                               'format, and may also include \'type\', '
-                               '\'description\' and \'reference\'. Columns '
-                               'may be in any order. Each row should be a '
-                               'different scale with a unique name and amino '
-                               'acid values in positions corresponding to '
-                               'the header row',
+                               'scale values',
                         type = str, required = True)
     parser.add_argument('-m', '--maxcorrelation',
                         help = 'value of pairwise correlation above which '
@@ -211,13 +219,11 @@ def getcliargs(arglist = None):
     sys.stderr.flush()
     return(args)
 
-
-
 # Main
 
 def main():
     
-    args = getcliargs(['-s', 'protscale_reformatted.csv', '-rf', '2', '-b', '5'])
+    args = getcliargs()#['-s', 'protscale_reformatted.csv', '-rf', '2', '-b', '5'])
     
     scales = parse_scales(args.scales, args.maxcorrelation)
     rf0 = args.readingframe-1
