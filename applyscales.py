@@ -121,7 +121,6 @@ def parse_scales(path, retainthreshold):
     if retainthreshold < 1:
         acscales = correlating_scales(scales, retainthreshold)
         scales = [s for s in scales if s['name'] not in acscales]
-        print(f"Removed highly correlating scales {', '.join(acscales)}")
     
     return(scales)
 
