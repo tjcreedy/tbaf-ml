@@ -52,16 +52,6 @@ class Range(argparse.Action):
 
 # Function definitions
 
-def required_multiple(multiple):
-    class RequiredMultiple(argparse.Action):
-        def __call__(self, parser, args, values, option_string=None):
-            if not len(values) % multiple == 0:
-                msg = 'argument "{f}" requires a multiple of {multiple} values'
-                msg = msg.format(f=self.dest, multiple=multiple)
-                raise argparse.ArgumentTypeError(msg)
-            setattr(args, self.dest, values)
-    return RequiredMultiple
-
 def to_scale_dict(line, head):
     scale = dict()
     scale['scale'] = {aa: float(n) for aa, n in zip(head, line) if aa in AA}
@@ -98,14 +88,12 @@ def correlating_scales(scales, threshold):
         for j in rcols:
             if j == i:
                 continue
-            print(f"{i} vs {j}")
             #i, j = scalecm.columns[0:2]
             if scalecm[i].loc[j] > threshold:
                 rcols = [c for c in scalecm.columns if c not in drop]
                 means = [scalecm[rcols].loc[c].mean() for c in [i, j]]
                 todrop = [i, j][means.index(max(means))]
                 drop.append(todrop)
-                print(f"dropped {drop[-1]}")
                 if todrop == i:
                     break
     return(drop)
