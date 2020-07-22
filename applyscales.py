@@ -142,7 +142,7 @@ def scale_evaluation(seqstring, scales, output = 'all'):
     elif output == 'sum':
         return([sum(v) for v in outvalues])
 
-def write_out(prinq, scales):
+def write_out(scales, prinq):
     oh = csv.writer(sys.stdout, 
                     quoting=csv.QUOTE_MINIMAL, 
                     delimiter = ',',
