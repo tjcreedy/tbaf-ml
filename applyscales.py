@@ -155,7 +155,7 @@ def write_out(prinq, scales):
         if queueitem is None: break
         oh.writerow(queueitem)
 
-def process_seqrecord(prinq, scales, args, rf0, seqr):
+def process_seqrecord(scales, prinq, args, rf0, seqr):
     #seqr = next(SeqIO.parse('test.fasta', 'fasta'))
     seqstr = str(seqr[rf0:].translate(table = args.table).seq)
     prinq.put([seqr.id, seqstr.count('*'), len(seqr.seq)] 
