@@ -140,7 +140,7 @@ def getcliargs(arglist = None):
                         type = str)
     parser.add_argument('-a', '--abundance',
                         help = 'path to abundance data for input sequences',
-                        type = str)
+                        type = str, nargs = '+')
     parser.add_argument('-kv', '--knownvalid',
                         help = 'path to file listing known valid input'
                                'sequences',
@@ -225,7 +225,7 @@ def main():
         # missing values (abundance) should have any relationship with 
         # values of scale
     imp = impute.SimpleImputer(missing_values = float('NaN'), 
-                               strategy = 'mean')
+                               strategy = 'median')
     train = imp.fit_transform(train)
     
     # Standardise data 
