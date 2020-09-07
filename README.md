@@ -46,7 +46,7 @@ This data is now ready to be prepared for use in training the model. The above t
 
 ## Step 2: Preparing the focal dataset
 
-In order to train the model, we much identify some sequences from the focal dataset that are valid or spurious. For this reason, I suggest that this pipeline be run after any denoising performed on the dataset (to reduce data volume), but before any length or translation filtering. I assume the ASVs to be filtered are in a file called `ASVs.fasta`
+In order to train the model, we must identify some sequences from the focal dataset that are valid or spurious. For this reason, I suggest that this pipeline be run after any denoising performed on the dataset (to reduce data volume), but before any length or translation filtering (so that identifiable spurious sequences exist). I assume the ASVs to be filtered are in a file called `ASVs.fasta`
 
 ### Identify valid sequences
 If a reference set of sequences is available (here called `refdb.fasta`), BLAST the ASVs against this reference set and parse the output to retrieve a list of the ASVs that match. Generally this should be fairly strict and retain only very high likelihood matches.
@@ -69,7 +69,7 @@ rm lengthcheck_*
 ```
 
 ### Calculate protein scale data
-As above for the reference data
+This is performed in exactly the same way as for the reference data above
 ```
 python3 applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 0.95 --threads 10 --table 5 < ASVs.fasta > ASVs_protscale.csv
 ```
@@ -88,24 +88,25 @@ cut -f1 reads_ASVs_map.tsv | sed "s/$/;/" | xargs -Iqname grep qname ASVs_names.
 
 ## Step 3: Merging data in preparation for classification
 
-All the above data is parsed, merged together, missing values imputed, and rescaled to form the training and focal datasets for classification using the `prepml.py` script. 
+All the above data is parsed, merged together, missing values imputed, and rescaled to form the datasets for classification using the `prepml.py` script. 
 ```
 python3 prepml.py --scales ASVs_protscale.csv --abundance reads_ASVs_map_final.tsv --knownvalid ASVs_refmatch.txt --knowninvalid ASVs_lengthexclude.txt --validscales references_protscale.csv --output prepped
 ```
-This command will create three objects. `prepped.pickle` is a stored python object containing the data formatted exactly as required by the classifier. `prepped_trainingdata.csv` is the complete scaled training data (references plus known ASVs), and `prepped_newdata.csv` is the complete scaled focal data.
+This command will output two `.csv` tabular files containing the standardised data in the correct format for training and classification, one each for the training data (known valid or spurious) and the new data (ASVs to be classified into spurious or valid). The training data will have two more columns than the new data, for the "class" of each training data point (0 = spurious, 1 = valid) and for the "stratum" of each training datapoint (r0 = spurious from the reference data, n1 = valid from the new data, etc). 
 
-## Step 4: Running classification
+## Step 4: Training the classifier
 
-Classification is run using the `exploreLinearSVC.py` script, using the data in the `prepped.pickle` file produced in the previous step. The training of the linearSVC model is performed using cross-validation to tune the `C` and `tol` hyperparameters to generate the best model under three scoring systems. Simply, rather than just training the classifier on the entire training dataset without validation, the training data is split into training and test data. The classifier is repeatedly trained on subsets of the training data under multiple combinations of values of the hyperparameters, with each training run validated against left-out data to score the accuracy, precision and recall of the estimator. The best classifier model for each score is tested again against the initial test data, and comprehensive score data is output to a csv and a pdf for inspection. The best three classifier models are then retrained on the whole training data and then used to classify the novel data, and the resulting classifications are output to a csv for downstream use.
+Training is run using the `exploreLinearSVC.py` script, using the data in the `_trainingdata.csv` file produced in the previous step. The training of the linearSVC model is performed using cross-validation to tune the `C` and `tol` hyperparameters to generate the best model under three scoring systems. An initial range of hyperparameter values is 
+
+
+Simply, rather than just training the classifier on the entire training dataset without validation, the training data is repeatedly split into training and test data. For each combination of hyperparameters, the classifier trains on a 'training' subset of the overall training data, with each training run validated against left-out 'test' data to score the average accuracy, precision and recall of the estimator. The best performing classifier model and hyperparameters for each score is tested again against an overall train-test split, and comprehensive score data is output to a csv and a pdf for inspection. The best three classifier models are output for use in final scallification.
 ```
 python3 exploreLinearSVC.py -data prepped.pickle -threads 10 --maxiter 5000 --output results
 ```
-Note that this step is computationally expensive. On a dataset of around 74,000 ASVs with 20,000 reference sequences, it requires in the region of about 2000 CPU hours. The `--maxiter` parameter is passed to linearSVC - if the classifier fails to converge with this number of iterations, the script will fail with an error. You should either increase the number of iterations or run with `--allownonconvergence`, although this may give less optimal results.
+The `--maxiter` parameter is passed to linearSVC - if the classifier fails to converge with this number of iterations, warnings will print. This may mean that optimal hyperparameters are not being achieved with the current maximum iterations, and you may want to consider running again with a larger value. The default is 1000.
 
 Three scores - accuracy, precision and recall - are computed and analysed, and the performance of the classifier should be carefully inspected with respect to these scores. The scores are computed from the results of running a given model on known data, and are a functions of rate of false positives and/or false negatives. Accuracy measures the overall accuracy, viz. the proportion of correct classifications. Precision is the proportion of all positive classifications that are correct, i.e. higher values of precision denote lower rates of false positives. Recall is the proportion of positive cases that were correctly classified, i.e. higher values of recall denote lower rates of false negatives. The analysis of the best-scoring model for each score is output to `results.pdf`. The score used to select the best model should be based on the downstream research questions. For example, the recall score should be used if maximal preservation of valid ASVs is desired, while precision should be used for maximal removal of spurious ASVs. Accuracy provides an overall balance between the two. It should of course be remembered that the statistics presented in the pdf pertain only to the training data, and are only estimates of the performance of the classifier on the unknown novel data.
 
-Based on the score selected, the results in `results_predictions.csv` can be used to extract the retained ASVs.
-TODO
 
 
 
