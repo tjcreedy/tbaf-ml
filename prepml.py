@@ -200,7 +200,7 @@ def main():
     
     # Merge training data
         # Generate source list
-    src = ['t'] * len(cls) + ['n'] * len(tcls)
+    src = ['r'] * len(cls) + ['n'] * len(tcls)
         # Merge data and class list
     train = pandas.concat([train, ttrain], axis = 0, join = 'outer')
     trainindex = train.index
@@ -234,19 +234,16 @@ def main():
     
     train_scaled = pandas.DataFrame(train_scaled, 
                                     index = trainindex, columns = traincolumn)
+    train_scaled.insert(0, "stratum", strat)
+    train_scaled.insert(0, "class", cls)
     new_scaled = pandas.DataFrame(new_scaled, 
                                   index = new.index, columns = new.columns)
     
-    
     # Output
-    
-    with open(f"{args.output}_trainingdata.pickle", 'wb') as oh:
-        pickle.dump([train_scaled, cls, strat], oh)
-    with open(f"{args.output}_newdata.pickle", 'wb') as oh:
-        pickle.dump(new_scaled, oh)
-    
-    train_scaled.to_csv(f"{args.output}_trainingdata.csv")
-    new_scaled.to_csv(f"{args.output}_newdata.csv")
+    train_scaled.to_csv(f"{args.output}_trainingdata.csv", 
+                        index_label = 'seqname')
+    new_scaled.to_csv(f"{args.output}_newdata.csv",
+                      index_label = 'seqname')
     
     print("\nMissing data imputed, all data standardised, prepared data "
           f"written to {args.output}*")

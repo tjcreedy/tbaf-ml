@@ -997,7 +997,7 @@ def getcliargs(arglist = None):
     
     parser._optionals.title = "arguments"
     parser.add_argument('-d', '--data',
-                        help = 'path to prepared data',
+                        help = 'path to training data',
                         type = str)
     parser.add_argument('-t', '--threads',
                         help = 'number of cores',
@@ -1006,9 +1006,6 @@ def getcliargs(arglist = None):
                         help = 'the maximum number of iterations for the '
                                'estimator',
                         type = int, default = 1000)
-    parser.add_argument('--allownonconvergence',
-                        help = 'don\'t fail if an estimator does not converge',
-                        action = 'store_true')
     parser.add_argument('-o', '--output',
                         help = 'prefix path to output results',
                         type = str)
@@ -1027,9 +1024,10 @@ def main():
     
     args = getcliargs()
     #args = getcliargs(['-d','testdata/amm/prepped.pickle','-t','-1','-o','SVCout'])
-    #args = getcliargs(['-d','testdata/cccpmeta_rand2000/prepped_trainingdata.pickle','-t','-1','-o','SVCout'])
-    with open(args.data, 'rb') as ih:
-        train, cls, strat = pickle.load(ih)
+    #args = getcliargs(['-d','testdata/cccpmeta_rand2000/prepped_trainingdata.csv','-t','-1','-o','SVCout'])
+    train = pd.read_csv(args.data, index_col = 0)
+    cls = train.pop('class')
+    strat = train.pop('stratum')
     
     print(f"\nLoaded {len(cls)} total training data points")
     
