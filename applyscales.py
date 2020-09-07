@@ -11,11 +11,14 @@ import argparse
 import csv
 import multiprocessing
 import functools
-import pandas
-import numpy
+import pandas as pd
+import numpy as np 
 
 import textwrap as _textwrap
 from Bio import SeqIO
+from Bio import SeqUtils
+from Bio.SeqUtils.ProtParam import ProteinAnalysis
+
 
 # Global variables
 
@@ -58,20 +61,20 @@ def to_scale_dict(line, head):
     if len(AA) != len(scale['scale'].keys()):
         raise KeyError(f"header does not contain all of {AA}")
     if 'name' not in head:
-        raise ValueError(f"header does not contain a \'name\' column")
+        raise ValueError("header does not contain a \'name\' column")
     for n in ['name', 'type', 'description', 'reference']:
         scale[n] = line[head.index(n)] if n in head else None
     return(scale)
 
 def correlating_scales(scales, threshold):
     # Convert to pandas df
-    scaledf = pandas.DataFrame({s['name']: [s['scale'][aa] for aa in AA] 
+    scaledf = pd.DataFrame({s['name']: [s['scale'][aa] for aa in AA] 
                                                               for s in scales})
     # Generate correlation matrix
     scalecm = scaledf.corr().abs()
     # Drop diagonal
-    mask = numpy.zeros(scalecm.shape, dtype = bool)
-    numpy.fill_diagonal(mask, 1)
+    mask = np.zeros(scalecm.shape, dtype = bool)
+    np.fill_diagonal(mask, 1)
     scalecm = scalecm.mask(mask)
     # Sort by max value
     cols = scalecm.max().sort_values(ascending = False).index
@@ -112,41 +115,54 @@ def parse_scales(path, retainthreshold):
     
     return(scales)
 
-def scale_evaluation(seqstring, scales, output = 'all'):
-    validoutputs = ['all', 'mean', 'sum']
-    if output not in validoutputs:
-        raise ValueError(f"output should be one of {', '.join(validoutputs)}")
-    outvalues = []
-    for scale in scales:
-        values = []
-        for aa in seqstring:
-            if aa in scale['scale']:
-                values.append(scale['scale'][aa])
-        outvalues.append(values)
-    if output == 'all':
-        return(outvalues)
-    elif output == 'mean':
-        return([sum(v)/len(v) for v in outvalues])
-    elif output == 'sum':
-        return([sum(v) for v in outvalues])
+#def chunker(seq, n):
+#    for i in range(0, len(seq), int(n)):
+#        yield(seq[i:i+n])
+
+def scale_evaluation(seqr, aastr, scales, chunks = 1):
+    #seqr, aastr = seqr.seq, seqstring
+    # Summary information
+    out = {'name': seqr.id,
+           'n_stops': aastr.count('*'),
+           'n_nucs': len(seqr.seq)}
+    # GC percentages
+    for k, v in zip(['total', 'pos1', 'pos2', 'pos3'], 
+                    SeqUtils.GC123(seqr.seq)):
+        out[f"GC_pc_{k}"] = v
+    
+    def _part_eval(aapart, i = None):
+        sfx = '' if i == None else f"_chunk{i}"
+        px = ProteinAnalysis(aapart)
+        aalen = len(aapart)
+        for k, v in px.get_amino_acids_percent().items():
+            out[f"prop_{k}_AA{sfx}"] = v
+        for scale in scales:
+            svs = sum([scale['scale'][aa] for aa in aapart if aa in AA])
+            out[scale['name'] + sfx] = svs/aalen
+    
+    # Protein data 
+    if chunks == 1:
+        _part_eval(aastr)
+    else:
+        for i, aapart in enumerate(np.array_split(list(aastr), chunks)):
+            _part_eval(''.join(aapart), i)
+    return(out)
 
 def write_out(scales, prinq):
-    oh = csv.writer(sys.stdout, 
-                    quoting=csv.QUOTE_MINIMAL, 
-                    delimiter = ',',
-                    lineterminator = '\n')
-    oh.writerow(['name', 'n_stops', 'n_nucs'] 
-                + [f"mean_{s['name']}" for s in scales])
+    outlist = []
     while 1:
         queueitem = prinq.get()
         if queueitem is None: break
-        oh.writerow(queueitem)
+        outlist.append(queueitem)
+    outdf = pd.DataFrame(outlist)
+    outdf.set_index('name', inplace = True)
+    outdf.sort_index(axis = 1, inplace = True)
+    outdf.to_csv(sys.stdout, index = True)
 
 def process_seqrecord(scales, prinq, args, rf0, seqr):
-    #seqr = next(SeqIO.parse('test.fasta', 'fasta'))
-    seqstr = str(seqr[rf0:].translate(table = args.table).seq)
-    prinq.put([seqr.id, seqstr.count('*'), len(seqr.seq)] 
-              + scale_evaluation(seqstr, scales, 'mean'))
+    #seqr = next(SeqIO.parse('testdata/amm/amm_asvs.fasta', 'fasta'))
+    aastr = str(seqr[rf0:].translate(table = args.table).seq)
+    prinq.put(scale_evaluation(seqr, aastr, scales, args.chunks))
 
 def getcliargs(arglist = None):
     
@@ -189,6 +205,13 @@ def getcliargs(arglist = None):
                                'input sequences on which to begin '
                                'translation',
                         type = int, choices = [1, 2, 3], required = True)
+    parser.add_argument('-c', '--chunks',
+                        help = 'if supplied, amino acid sequences will be '
+                               'split into this number of equally-sized '
+                               'segments of the given length and scale '
+                               'values computed separately and averaged '
+                               'on each chunk',
+                        type = int, default = 1)
     parser.add_argument('-t', '--threads',
                         help = 'number of parallel threads',
                         type = int, default = 1)
@@ -209,8 +232,8 @@ def getcliargs(arglist = None):
 # Main
 
 def main():
-    
-    args = getcliargs()#['-s', 'protscale_reformatted.csv', '-rf', '2', '-b', '5'])
+    args = getcliargs()
+    #args = getcliargs(['-s', 'protscale.csv', '-rf', '2', '-b', '5'])
     
     scales = parse_scales(args.scales, args.maxcorrelation)
     rf0 = args.readingframe-1

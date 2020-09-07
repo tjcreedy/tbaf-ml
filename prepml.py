@@ -33,25 +33,6 @@ class MultilineFormatter(argparse.HelpFormatter):
 
 # Function definitions
 
-
-def parse_scalevalues(path, typ):
-    #path, typ = args.input, 'input'
-    out = [None] * 2
-    indf = pandas.read_csv(path, index_col='name')
-    indf = indf.drop(labels=['n_stops', 'n_nucs'], axis=1)
-    if typ in 'vi':
-        out[0 if typ == 'v' else 1] = indf
-    else:
-        out = indf
-#    else:
-#        newi = [i for i, (s, l) in enumerate(zip(indf.n_stops, indf.n_nucs))
-#                 if s == 0 and l == 418]
-#        indf = indf.drop(labels=['n_stops', 'n_nucs'], axis=1)
-#        invalidi = [i for i in range(len(indf.index)) if i not in newi]
-#        out[1] = indf.iloc[newi]
-#        out[2] = indf.iloc[invalidi]
-    return(out)
-
 def process_scaledata(args):
     # Load new data
     new = pandas.read_csv(args.scales, index_col='name')

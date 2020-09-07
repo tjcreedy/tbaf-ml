@@ -446,6 +446,7 @@ class GridSearchCV_custom(model_selection.GridSearchCV):
         return results
     
     def post_refit(self, X, y, refit_metric, **fit_params):
+        # X, y, refit_metric, self = train, cls, rs, search
         self.refit = refit_metric
         results = self.cv_results_
         base_estimator = self.estimator
@@ -464,6 +465,9 @@ class GridSearchCV_custom(model_selection.GridSearchCV):
                    self.best_index_ >= len(results["params"])):
                     raise IndexError('best_index_ index out of range')
             else:
+                results["rank_test_%s" % refit_metric] = np.asarray(
+                            rankdata(-results["mean_test_%s" % refit_metric],
+                                     method='min'), dtype=np.int32)
                 self.best_index_ = results["rank_test_%s"
                                            % refit_metric].argmin()
                 self.best_score_ = results["mean_test_%s" % refit_metric][
@@ -661,7 +665,8 @@ def analyse_results(search, scorers, output, train, cls, strat):
     curves = ['roc_values', 'prc_values', 'threshc_values']
     
     # Set up outputs
-    models = {'fullsearch': search}
+    models = dict()
+    models['fullsearch'] = search
     
     # Open a pdf to write to
     pdf = PdfPages(f"{output}.pdf")
@@ -1024,10 +1029,13 @@ def main():
     
     args = getcliargs()
     #args = getcliargs(['-d','testdata/amm/prepped.pickle','-t','-1','-o','SVCout'])
-    #args = getcliargs(['-d','testdata/cccpmeta_rand2000/prepped_trainingdata.csv','-t','-1','-o','SVCout'])
+    # args = getcliargs(['-d','testdata/cccpmeta_rand1000/prepped_trainingdata.csv','-t','-1','-o','SVCout'])
     train = pd.read_csv(args.data, index_col = 0)
     cls = train.pop('class')
     strat = train.pop('stratum')
+    # Drop this data because n_stops and n_nucs were used to identify the 
+    # known invalid data
+    train = train.drop(['n_stops', 'n_nucs'], axis = 1)
     
     print(f"\nLoaded {len(cls)} total training data points")
     
@@ -1059,7 +1067,7 @@ def main():
 #    pg = ps.get_minmax_untested_params()
 #    gs = GridSearchCV_custom(clf, pg, refit = 'precision_score', **gscvkwargs)
 #    gs.fit(train, cls)
-    
+    gs.post_refit(train, cls, 'accuracy_score')
     grid_search = iterativeGridSearchCV(clf, paramspecs, scorers, train,
                                         cls,  gscvkwargs, args, 1e-8, 10)
     
