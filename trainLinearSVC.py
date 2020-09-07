@@ -493,6 +493,9 @@ def _fitnscore_cust(estimator, X, y, scorer, train, test, verbose,
                    return_roc=False, return_prc=False, return_threshc=False,
                    return_estimator=False,
                    error_score=np.nan):
+    # estimator, scorer, return_train_score, return_parameters, return_n_test_samples, return_times, return_n_iter, return_cm, return_roc, return_prc, return_threshc, return_estimator, error_score, verbose = clone(base_estimator), scorers, True, True, True, True, True, True, True, True, True, True, np.nan, 5
+    # parameters, (train, test) = next(product(candidate_params, cv.split(X, y, groups)))
+    
     
     import numbers
     from traceback import format_exc
@@ -569,12 +572,23 @@ def _fitnscore_cust(estimator, X, y, scorer, train, test, verbose,
             train_scores = _score(estimator, X_train, y_train, scorer)
         n_iter = estimator.n_iter_
         if return_cm:
-            cm = metrics.confusion_matrix(y_test,
-                                          estimator.predict(X_test))
-            cases = ['true_negatives', 'false_positives', 'false_negatives',
-                     'true_positives']
-            cm = list(cm.ravel()) + [0] * (4 - len(cm.ravel()))
-            cm = dict(zip(cases, cm))
+            cm = dict(zip(['true_negatives', 'false_positives',
+                           'false_negatives', 'true_positives'],
+                          [0] * 4))
+            for true, pred in zip(y_test, estimator.predict(X_test)):
+                # true, pred = next(zip(y_test, estimator.predict(X_test)))
+                s = sum([true, pred])
+                if s == 2:
+                    cm['true_positives'] += 1
+                elif s == 0:
+                    cm['true_negatives'] += 1
+                elif true == 1:
+                    cm['false_negatives'] += 1
+                elif pred == 1:
+                    cm['false_positives'] += 1
+                else:
+                    raise Exception(f"Values {true} and {pred} not valid for"
+                                    " computing confusion matrix")
         if return_roc or return_prc or return_threshc:
             df = estimator.decision_function(X_test)
             if return_roc:
@@ -667,6 +681,7 @@ def analyse_results(search, scorers, output, train, cls, strat):
     # Work through the scorers refitting and generating plotting data
     roc = {'fpr': dict(), 'tpr': dict(), 'thr': dict(), 'auc': dict()}
     prc = {'pre': dict(), 'rcl': dict(), 'thr': dict(), 'ap': dict()}
+    cms = []
     for rs in scorers.keys():
         #rs = list(scorers.keys())[0]
         
@@ -684,11 +699,11 @@ def analyse_results(search, scorers, output, train, cls, strat):
                                           rs))
             #Confusion matrices
         cm_values = []
-        rows = ['negatives', 'positives']
-        cols = ['true', 'false']
-        for c in rows:
+        classes = ['negatives', 'positives']
+        bools = ['true', 'false']
+        for d in [1, -1]:
             r = []
-            for b in cols:
+            for b, c in zip(bools[::d], classes):
                 mean = np.around(search.cv_results_[f"mean_{b}_{c}"][i], 2)
                 std = np.around(search.cv_results_[f"std_{b}_{c}"][i], 2)
                 r.append(f"{mean} ± {std} SD")
@@ -696,12 +711,13 @@ def analyse_results(search, scorers, output, train, cls, strat):
         fig, ax = plt.subplots()
         ax.set_axis_off()
         ax.table(cellText = cm_values,
-                 rowLabels = rows,
-                 colLabels = cols,
+                 rowLabels = ["true_0", "true_1"],
+                 colLabels = ["predicted_0", "predicted_1"],
                  loc = 'center')
         ax.set_title( "Mean and Standard Deviation Confusion Matrix\n"
                      f"values for the {search.n_splits_} test-train split\n"
                      f"model fittings with the best {rs}")
+        pdf.savefig(fig)
         
         # Save final model
         models['rs'] = clone(search.best_estimator_)
@@ -724,7 +740,8 @@ def analyse_results(search, scorers, output, train, cls, strat):
         # Plot confusion matrix
         cmplt = metrics.plot_confusion_matrix(be, data_test, cls_test)
         cmplt.ax_.set_title(f"Confusion matrix for fitting optimised for {rs}")
-        pdf.savefig(cmplt.figure_)
+        cms.append(cmplt.figure_)
+        
     
     # Do plotting
     colours = dict(zip(scorers.keys(), 'bgr'))
@@ -777,6 +794,10 @@ def analyse_results(search, scorers, output, train, cls, strat):
     ax.legend(loc = 'lower right')
     pdf.savefig(fig)
     
+    # Confusion matrices
+    for cm in cms:
+        pdf.savefig(cm)
+    
     pdf.close()
     
     results_out = {k:v for k,v in search.cv_results_.items() 
@@ -794,7 +815,7 @@ def plot_kfold_curves(dicts, n, score):
         x, y1, y2, v, f = 'fpr', 'tpr', None, 'auc', 1
         xlab, ylab, title = ('False Positive Rate',
                              'True Positive Rate',
-                             (f"Reciever Operating Characteristic{title}, "
+                             (f"Receiver Operating Characteristic{title}, "
                               "AUC = "))
     elif dataheads == {'rcl', 'pre', 'ap'}:
         x, y1, y2, v, f = 'rcl', 'pre', None, 'ap', None
@@ -1024,7 +1045,7 @@ def main():
                   'n_jobs': args.threads,
                   'pre_dispatch': '2*n_jobs',
                   'scoring': scorers,
-                  'verbose': 2}
+                  'verbose': 1}
     
     paramspecs = {'C': (-10, 4, 1, 
                          lambda x : 10 ** x, 
@@ -1039,7 +1060,7 @@ def main():
 #    ps = SearchParamSet(paramspecs)
 #    pg = ps.get_minmax_untested_params()
 #    gs = GridSearchCV_custom(clf, pg, refit = 'precision_score', **gscvkwargs)
-#    gs.fit(data_train, cls_train)
+#    gs.fit(train, cls)
     
     grid_search = iterativeGridSearchCV(clf, paramspecs, scorers, train,
                                         cls,  gscvkwargs, args, 1e-8, 10)

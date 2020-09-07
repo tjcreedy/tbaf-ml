@@ -140,7 +140,7 @@ def getcliargs(arglist = None):
                         type = str)
     parser.add_argument('-a', '--abundance',
                         help = 'path to abundance data for input sequences',
-                        type = str, nargs = '+')
+                        type = str)
     parser.add_argument('-kv', '--knownvalid',
                         help = 'path to file listing known valid input'
                                'sequences',
@@ -240,8 +240,10 @@ def main():
     
     # Output
     
-    with open(f"{args.output}.pickle", 'wb') as oh:
-        pickle.dump([train_scaled, cls, strat, new_scaled], oh)
+    with open(f"{args.output}_trainingdata.pickle", 'wb') as oh:
+        pickle.dump([train_scaled, cls, strat], oh)
+    with open(f"{args.output}_newdata.pickle", 'wb') as oh:
+        pickle.dump(new_scaled, oh)
     
     train_scaled.to_csv(f"{args.output}_trainingdata.csv")
     new_scaled.to_csv(f"{args.output}_newdata.csv")
