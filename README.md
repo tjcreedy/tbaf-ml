@@ -97,7 +97,7 @@ vsearch --search_exact reads.fasta -db ASVs.fasta -otutabout reads_ASVs_map.tsv
 If your ASVs have any annotations (e.g. `;size=YYY;`) in their headers, this data will be removed by `search_exact`, so we must return it in order for subsequent steps to accurately match up data.
 ```
 grep -oP "(?<=^>).*$" ASVs.fasta > ASVs_names.txt
-cut -f1 reads_ASVs_map.tsv | sed "s/$/;/" | xargs -Iqname grep qname ASVs_names.txt | cat <(echo "#OTU ID") /dev/stdin) | paste /dev/stdin <(cut -f2- reads_ASVs_map.tsv) > reads_ASVs_map_final.tsv
+cut -f1 reads_ASVs_map.tsv | sed "s/$/;/" | xargs -Iqname grep qname ASVs_names.txt | cat <(echo "#OTU ID") /dev/stdin | paste /dev/stdin <(cut -f2- reads_ASVs_map.tsv) > reads_ASVs_map_final.tsv
 ```
 
 ## Step 3: Merging data in preparation for classification
