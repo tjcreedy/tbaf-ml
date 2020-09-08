@@ -45,8 +45,7 @@ python3 applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 
 This data is now ready to be prepared for use in training the model. The above three steps should be run again for any other reference data, if separate.
 
 ## Step 2: Preparing the focal dataset
-
-In order to train the model, we must identify some sequences from the focal dataset that are valid or spurious. For this reason, I suggest that this pipeline be run after any denoising performed on the dataset (to reduce data volume), but before any length or translation filtering (so that identifiable spurious sequences exist). I assume the ASVs to be filtered are in a file called `ASVs.fasta`
+In order to reduce the total data volume and remove easily-identifiable spurious sequences, it's strongly recommended to run denoising first, or at least remove all singleton ASVs. I also suggest removing ASVs that are  more than 3 bases longer or shorter than the expected length. In order to train the model, we must identify some sequences from the focal dataset that are valid or spurious, so I do not recommend any stricter length filtering nor any filtering based on translation. I assume the ASVs to be filtered are in a file called `ASVs.fasta`
 
 ### Identify valid sequences
 If a reference set of sequences is available (here called `refdb.fasta`), BLAST the ASVs against this reference set and parse the output to retrieve a list of the ASVs that match. Generally this should be fairly strict and retain only very high likelihood matches.
@@ -60,18 +59,27 @@ rm ASVs_v_refdb.blast.txt
 ```
 
 ### Identify spurious sequences
-I assume that any ASVs that vary from the target length by anything other than one complete codon are likely errors, i.e. the permitted sequence lengths are 415, 418 or 421 base pairs. 
+I assume that any ASVs that vary from the target length are likely errors. However, length variants due to insertions or deletions will have frame shifts in translation, so these must be aligned, the insertions removed and the deletions patched in order to ensure that these variants do not introduce unrealistic variation into the training data. Here, the target length is exactly 418bp.
+First split the data into 418bp and all other, recording the names of the variants
 ```
-for l in 415 418 421; do vsearch --fastx_filter ASVs.fasta --fastq_minlen $l --fastq_maxlen $l --fastaout lengthcheck_$l.fasta; done
-cat lengthcheck_*.fasta | grep "^>" > lengthcheck_potentials.txt
-diff --new-line-format="" --unchanged-line-format="" <(grep "^>" ASVs.fasta | sort) lengthcheck_potentials.txt | sed -e "s/^>//" > ASVs_lengthexclude.txt
-rm lengthcheck_*
+vsearch --fastx_filter ASVs.fasta --fastq_minlen 418 --fastq_maxlen 418 --fastaout ASVs_418.fasta --fastaout_discarded ASVs_lengthvar.fasta
+grep -oP "(?<=^>).*$" ASVs_lengthvar.fasta > ASVs_lengthexclude.txt
+```
+Take a subset of 2000 ASVs of the target length and align the variants to this. The alignment command includes the argument `--keeplength` which trims all insertions caused by the added sequences, so the resulting alignment length is the same as the target length. We also replace all resulting gaps in the alignment with `N`s.
+```
+perl -pe '$. > 1 and /^>/ ? print "\n" : chomp' ASVs_418.fasta | head -n 4000 > ASVs_418_2k.fasta # The perl oneliner unwraps the sequences first to easily subset
+mafft --add ASVs_lengthvar.fasta --op 5 --ep 1 --keeplength --thread 30 ASVs_418_2k.fasta | sed -e "/^[^>]/s/-/N/g" > ASVs_lengthvar.aln.fasta
+```
+Concatenate the modified length variants to the target ASVs
+```
+perl -pe '$. > 1 and /^>/ ? print "\n" : chomp' ASVs_lengthvar.aln.fasta | tail -n +4001 > ASVs_lengthvar_modified.fasta
+cat ASVs_418.fasta ASVs_lengthvar_modified.fasta > ASVs_MLinput.fasta
 ```
 
 ### Calculate protein scale data
 This is performed in exactly the same way as for the reference data above
 ```
-python3 applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 0.95 --threads 10 --table 5 < ASVs.fasta > ASVs_protscale.csv
+python3 applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 0.95 --threads 10 --table 5 < ASVs_MLinput.fasta > ASVs_protscale.csv
 ```
 
 ### Calculate read abundance data
