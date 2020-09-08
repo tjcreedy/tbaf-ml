@@ -75,6 +75,10 @@ Concatenate the modified length variants to the target ASVs
 perl -pe '$. > 1 and /^>/ ? print "\n" : chomp' ASVs_lengthvar.aln.fasta | tail -n +4001 > ASVs_lengthvar_modified.fasta
 cat ASVs_418.fasta ASVs_lengthvar_modified.fasta > ASVs_MLinput.fasta
 ```
+Clean up
+```
+rm ASVs_lengthvar.fasta ASVs_lengthvar.aln.fasta ASVs_lengthvar_modified.fasta ASVs_418.fasta ASVs_418_2k.fasta
+```
 
 ### Calculate protein scale data
 This is performed in exactly the same way as for the reference data above
