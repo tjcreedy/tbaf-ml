@@ -77,7 +77,7 @@ cat ASVs_418.fasta ASVs_lengthvar_modified.fasta > ASVs_MLinput.fasta
 ```
 Clean up
 ```
-rm ASVs_lengthvar.fasta ASVs_lengthvar.aln.fasta ASVs_lengthvar_modified.fasta ASVs_418.fasta ASVs_418_2k.fasta
+rm ASVs_lengthvar* ASVs_418*
 ```
 
 ### Calculate protein scale data
