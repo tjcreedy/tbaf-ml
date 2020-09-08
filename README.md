@@ -89,6 +89,8 @@ python3 applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 
 ### Calculate read abundance data
 Here we calculate the number of reads of each ASV in each of the samples within the metabarcoding dataset as a whole. The abundance profile of each ASV is used to better characterise the sequences for the classification.
 This assumes that you have a single large fasta file called `reads.fasta` which contains all of the reads for your project, with the sample that each read belongs to identified by a `;sample=XXXX;` tag in the header of each read. 
+
+Note: the inputs here are `ASVs.fasta`, not `ASVs_MLinput.fasta`. Using the latter will generate erroneous data!
 ```
 vsearch --search_exact reads.fasta -db ASVs.fasta -otutabout reads_ASVs_map.tsv
 ```
