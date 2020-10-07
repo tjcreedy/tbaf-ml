@@ -37,9 +37,9 @@ vsearch --fastx_filter references_amplicons.fasta --fastq_minlen 418 --fastq_max
 ```
 
 ### Calculate protein scale values
-The protscale.csv file supplied in this repository details 54 protein scales, each of which assigns each amino acid a value. The `applyscales.py` script supplied reads a fasta file, translates the DNA sequences to amino acids (given a reading frame and translation table, which for our example dataset is frame 2 and 5), assigns the values and calculates the mean for each of these scales. The result is output in csv format to the standard output. Note that here we take advantage of the optional function to calculate the correlation coefficient between all pairwise combinations of scales and remove any that highly correlate. We also take advantage of multithreading to perform the scale assessment more quickly. 
+The protscale.csv file supplied in this repository details 54 protein scales, each of which assigns each amino acid a value. The `applyscales.py` script supplied reads a fasta file, translates the DNA sequences to amino acids (given a reading frame and translation table, which for our example dataset is frame 2 and 5), assigns the values and calculates the mean for each of these scales. We can optionally also split each sequence into a number of equally sized chunks and compute the mean of each scale for each chunk. The result is output in csv format to the standard output. Note that here we calculate the scale means for 7 chunks as well as the overall sequence. We take advantage of the optional function to calculate the correlation coefficient between all pairwise combinations of scales and remove any that highly correlate. We also take advantage of multithreading to perform the scale assessment more quickly. 
 ```
-python3 applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 0.95 --threads 10 --table 5 < references_final.fasta > references_protscale.csv
+applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 0.95 --threads 10 --table 5 --chunks 7 < references_final.fasta > references_protscale.csv
 ```
 
 This data is now ready to be prepared for use in training the model. The above three steps should be run again for any other reference data, if separate.
@@ -81,9 +81,9 @@ rm ASVs_lengthvar* ASVs_418*
 ```
 
 ### Calculate protein scale data
-This is performed in exactly the same way as for the reference data above
+This is performed in exactly the same way as for the reference data above. It is important that this have identical parameters for both reference and focal data.
 ```
-python3 applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 0.95 --threads 10 --table 5 < ASVs_MLinput.fasta > ASVs_protscale.csv
+applyscales.py --scales protscale.csv --readingframe 2 --maxcorrelation 0.95 --threads 10 --table 5 --chunks 7 < ASVs_MLinput.fasta > ASVs_protscale.csv
 ```
 
 ### Calculate read abundance data
@@ -103,25 +103,35 @@ cut -f1 reads_ASVs_map.tsv | sed "s/$/;/" | xargs -Iqname grep qname ASVs_names.
 ## Step 3: Merging data in preparation for classification
 
 All the above data is parsed, merged together, missing values imputed, and rescaled to form the datasets for classification using the `prepml.py` script. 
+This command includes the optional `--usestopcount`, whereby if the translation of an amino acid contains stop codons, this sequence will be recorded as invalid. The optional argument `--addsize` includes the total read count of an ASV (from a ;size= header annotation) as an additional feature in the dataset. The argument `--dispersion 0.01` removes any features that have a dispersion (=variance/mean) of less than 0.01 in the training data.
 ```
-python3 prepml.py --scales ASVs_protscale.csv --abundance reads_ASVs_map_final.tsv --knownvalid ASVs_refmatch.txt --knowninvalid ASVs_lengthexclude.txt --validscales references_protscale.csv --output prepped
+prepml.py --scales ASVs_protscale.csv --abundance reads_ASVs_map_final.tsv --knownvalid ASVs_refmatch.txt --knowninvalid ASVs_lengthexclude.txt --validscales references_protscale.csv --usestopcount --addsize --dispersion 0 --output prepped
 ```
 This command will output two `.csv` tabular files containing the standardised data in the correct format for training and classification, one each for the training data (known valid or spurious) and the new data (ASVs to be classified into spurious or valid). The training data will have two more columns than the new data, for the "class" of each training data point (0 = spurious, 1 = valid) and for the "stratum" of each training datapoint (r0 = spurious from the reference data, n1 = valid from the new data, etc). 
 
 ## Step 4: Training the classifier
 
-Training is run using the `exploreLinearSVC.py` script, using the data in the `_trainingdata.csv` file produced in the previous step. The training of the linearSVC model is performed using cross-validation to tune the `C` and `tol` hyperparameters to generate the best model under three scoring systems. An initial range of hyperparameter values is 
+Training is run using the `train.py` script, using the data in the `prepped_trainingdata.csv` file produced in the previous step. The training of the linearSVC model is performed using cross-validation to tune the `C` and `tol` hyperparameters to generate the best model under three scoring systems.
 
 
 Simply, rather than just training the classifier on the entire training dataset without validation, the training data is repeatedly split into training and test data. For each combination of hyperparameters, the classifier trains on a 'training' subset of the overall training data, with each training run validated against left-out 'test' data to score the average accuracy, precision and recall of the estimator. The best performing classifier model and hyperparameters for each score is tested again against an overall train-test split, and comprehensive score data is output to a csv and a pdf for inspection. The best three classifier models are output for use in final scallification.
 ```
-python3 exploreLinearSVC.py -data prepped.pickle -threads 10 --maxiter 5000 --output results
+train.py -data prepped_trainingdata.pickle -threads 15 --maxiter 5000 --output results
 ```
 The `--maxiter` parameter is passed to linearSVC - if the classifier fails to converge with this number of iterations, warnings will print. This may mean that optimal hyperparameters are not being achieved with the current maximum iterations, and you may want to consider running again with a larger value. The default is 1000.
 
 Three scores - accuracy, precision and recall - are computed and analysed, and the performance of the classifier should be carefully inspected with respect to these scores. The scores are computed from the results of running a given model on known data, and are a functions of rate of false positives and/or false negatives. Accuracy measures the overall accuracy, viz. the proportion of correct classifications. Precision is the proportion of all positive classifications that are correct, i.e. higher values of precision denote lower rates of false positives. Recall is the proportion of positive cases that were correctly classified, i.e. higher values of recall denote lower rates of false negatives. The analysis of the best-scoring model for each score is output to `results.pdf`. The score used to select the best model should be based on the downstream research questions. For example, the recall score should be used if maximal preservation of valid ASVs is desired, while precision should be used for maximal removal of spurious ASVs. Accuracy provides an overall balance between the two. It should of course be remembered that the statistics presented in the pdf pertain only to the training data, and are only estimates of the performance of the classifier on the unknown novel data.
 
+The script will output a \_bestestimators.pickle file which contains the best trained model for each score. This can be applied to new data in the next step.
 
+## Step 4: Classifying new data
 
-
-
+This step brings together data generated by previous steps to classify any unknown input ASVs and output the set of ASVs that are 'valid', either through prior determination or through novel classification using an model trained in the previous step. 
+Here we will be using the best estimator according to the accuracy score.
+```
+classify.py --estimators results_bestestimators.pickle --score accuracy --asvs ASVs_MLinput.fasta --newdata prepped_newdata.csv --trainingdata prepped_trainingdata.csv --output classified
+```
+Two or three files will be output:
+classified_valid.fasta will contain all sequences that were determined to be valid in Step 2, plus any sequences the selected model classified as valid according to the protein scale and abundance data
+classified_invalid.fasta will contain all sequences that were determined to be spurious in Step 2, plus any sequences the selected model classified as invalid accordin to the protein scale and abundance data
+classified_unknown.fasta will contain any sequences that occur in the file supplied to `--asvs` but that don't occur in `prepped_newdata.csv` or `prepped_trainingdata.csv`.
