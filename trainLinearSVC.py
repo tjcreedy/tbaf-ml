@@ -1028,16 +1028,17 @@ def getcliargs(arglist = None):
 def main():
     
     args = getcliargs()
-    #args = getcliargs(['-d','testdata/amm/prepped.pickle','-t','-1','-o','SVCout'])
+    #args = getcliargs(['-d','testdata/amm/prepped_trainingdata.csv','-t','-1','-o','SVCout'])
     # args = getcliargs(['-d','testdata/cccpmeta_rand1000/prepped_trainingdata.csv','-t','-1','-o','SVCout'])
     train = pd.read_csv(args.data, index_col = 0)
     cls = train.pop('class')
     strat = train.pop('stratum')
-    # Drop this data because n_stops and n_nucs were used to identify the 
-    # known invalid data
-    train = train.drop(['n_stops', 'n_nucs'], axis = 1)
+    # Drop this data because this is linked identifying the known invalid data 
+    train = train.drop(['n_stops', 'n_nt_ambig', 'n_aa_ambig'], axis = 1)
     
-    print(f"\nLoaded {len(cls)} total training data points")
+    print(f"\nLoaded {len(cls)} total training data points with "
+          f"{len(train.columns)} features after removal of nonindependent "
+          "features\n")
     
     scorers = {
         'precision_score': metrics.make_scorer(metrics.precision_score, 
@@ -1067,7 +1068,7 @@ def main():
 #    pg = ps.get_minmax_untested_params()
 #    gs = GridSearchCV_custom(clf, pg, refit = 'precision_score', **gscvkwargs)
 #    gs.fit(train, cls)
-    gs.post_refit(train, cls, 'accuracy_score')
+#    gs.post_refit(train, cls, 'accuracy_score')
     grid_search = iterativeGridSearchCV(clf, paramspecs, scorers, train,
                                         cls,  gscvkwargs, args, 1e-8, 10)
     

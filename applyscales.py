@@ -15,14 +15,32 @@ import pandas as pd
 import numpy as np 
 
 import textwrap as _textwrap
+
+from collections import defaultdict
+
 from Bio import SeqIO
 from Bio import SeqUtils
 from Bio.SeqUtils.ProtParam import ProteinAnalysis
 
 
 # Global variables
+NT = 'ATCG'
+NTambigs = {'Y': 'CT', 'R': 'AG', 'W': 'AT', 'S': 'GC', 'K': 'TG','M': 'CA',
+            'D': 'AGT', 'V': 'ACG', 'H': 'ACT', 'B': 'CGT', 'N': NT}
+AA = 'ACDEFGHIKLMNPQRSTVWY'
+AAambigs = {'B': 'ND', 'J': 'IL', 'Z': 'EQ', 'X': AA}
 
-AA = 'ARNDCQEGHILKMFPSTWYV'
+def makecounter(unique, ambigs):
+    alluniq = list(unique) + list(ambigs.keys())
+    counter = dict()
+    for r in alluniq:
+        if r in unique:
+            counter[r] = {r: 1}
+        else:
+            counter[r] = {ra: 1/len(ambigs[r]) for ra in ambigs[r]}
+    return(counter)
+
+NTcounter, AAcounter = makecounter(NT, NTambigs), makecounter(AA, AAambigs)
 
 # Class definitions
 
@@ -62,6 +80,10 @@ def to_scale_dict(line, head):
         raise KeyError(f"header does not contain all of {AA}")
     if 'name' not in head:
         raise ValueError("header does not contain a \'name\' column")
+    
+#    for aa, vals in AAambigs.items():
+#        scale['scale'][aa] = sum([scale['scale'][v] for v in vals])/2
+    
     for n in ['name', 'type', 'description', 'reference']:
         scale[n] = line[head.index(n)] if n in head else None
     return(scale)
@@ -119,49 +141,91 @@ def parse_scales(path, retainthreshold):
 #    for i in range(0, len(seq), int(n)):
 #        yield(seq[i:i+n])
 
-def scale_evaluation(seqr, aastr, scales, chunks = 1):
-    #seqr, aastr = seqr.seq, seqstring
-    # Summary information
+
+
+
+def scale_evaluation(seqr, aastr, scales, chunks):
+    # chunks = 7
+    seqr.seq = seqr.seq.upper()
+    
     out = {'name': seqr.id,
            'n_stops': aastr.count('*'),
-           'n_nucs': len(seqr.seq)}
-    # GC percentages
-    for k, v in zip(['total', 'pos1', 'pos2', 'pos3'], 
-                    SeqUtils.GC123(seqr.seq)):
-        out[f"GC_pc_{k}"] = v
+           'n_nt_ambig': seqr.seq.count('N'),
+           'n_aa_ambig': aastr.count('X')}
     
-    def _part_eval(aapart, i = None):
-        sfx = '' if i == None else f"_chunk{i}"
-        px = ProteinAnalysis(aapart)
-        aalen = len(aapart)
-        for k, v in px.get_amino_acids_percent().items():
-            out[f"prop_{k}_AA{sfx}"] = v
+    def _count_resid(restr, restype, prop = True):
+        #restr, counter, stdres, prop = ntstr, NTcounter, NT, True
+        if restype == 'NT':
+            counter, stdres = NTcounter, NT
+        elif restype == 'AA':
+            counter, stdres = AAcounter, AA
+        counts = {r: 0 for r in stdres}
+        restr = str(restr).replace('*', '')
+        for inres in restr:
+            for outres, value in counter[inres].items():
+                counts[outres] += value
+        if prop:
+            counts = {r: v/len(restr) for r, v in counts.items()}
+        return(counts)
+    
+    def _part_eval(ntstr, aastr, chunk = None):
+        # ntstr = str(seqr.seq)
+        # NT counts
+        rtn = _count_resid(ntstr, 'NT')
+        # NT counts by codon position
+        for i in range(3):
+            residcount = _count_resid(seqr.seq[i::3], 'NT')
+            rtn.update({f"{k}_pos{i+1}": v for k, v in residcount.items()})
+        rtn = {f"prop_nt_{k}": v for k, v in rtn.items()}
+        
+        # AA counts
+        aacount = _count_resid(aastr, 'AA')
+        # AA scale values
+        scalevals = {}
         for scale in scales:
-            svs = sum([scale['scale'][aa] for aa in aapart if aa in AA])
-            out[scale['name'] + sfx] = svs/aalen
+            for aa, p in aacount.items():
+                nkey = f"mean_{scale['name']}"
+                vals = [scale['scale'][k] * v for k, v in aacount.items()]
+                scalevals[nkey] = sum(vals)
+        scalevals.update({f"prop_aa_{k}": v for k, v in aacount.items()})
+        rtn.update(scalevals)
+        
+        if chunk is not None:
+            rtn = {f"{k}_chunk{chunk}": v for k, v in rtn.items()}
+        return(rtn)
     
-    # Protein data 
-    if chunks == 1:
-        _part_eval(aastr)
-    else:
-        for i, aapart in enumerate(np.array_split(list(aastr), chunks)):
-            _part_eval(''.join(aapart), i)
+    out.update(_part_eval(seqr.seq, aastr))
+    
+    if chunks > 1:
+        chunked = [np.array_split(list(restr), chunks) 
+                      for restr in [seqr.seq, aastr]]
+        for chnk, (ntpart, aapart) in enumerate(zip(*chunked)):
+            out.update(_part_eval(''.join(ntpart), ''.join(aapart), chnk))
     return(out)
 
+
 def write_out(scales, prinq):
-    outlist = []
+    csvwrite = csv.writer(sys.stdout, delimiter=',', quotechar='"', 
+                         quoting=csv.QUOTE_MINIMAL)
+    head = None
+    n = 0
     while 1:
         queueitem = prinq.get()
         if queueitem is None: break
-        outlist.append(queueitem)
-    outdf = pd.DataFrame(outlist)
-    outdf.set_index('name', inplace = True)
-    outdf.sort_index(axis = 1, inplace = True)
-    outdf.to_csv(sys.stdout, index = True)
+        n += 1
+        if n == 1:
+            head = list(queueitem.keys())
+            csvwrite.writerow(head)
+        csvwrite.writerow([queueitem[h] for h in head])
+        sys.stderr.write(f"\rDone {n} sequences")
+        sys.stderr.flush()
+    sys.stderr.write("\n")
+    sys.stderr.flush()
 
 def process_seqrecord(scales, prinq, args, rf0, seqr):
-    #seqr = next(SeqIO.parse('testdata/amm/amm_asvs.fasta', 'fasta'))
-    aastr = str(seqr[rf0:].translate(table = args.table).seq)
+    #seqr = next(SeqIO.parse('testdata/cccpmeta/4_MLinput.fasta', 'fasta'))
+    end = len(seqr) - ((len(seqr) - rf0) % 3)
+    aastr = str(seqr[rf0:end].translate(table = args.table).seq)
     prinq.put(scale_evaluation(seqr, aastr, scales, args.chunks))
 
 def getcliargs(arglist = None):
