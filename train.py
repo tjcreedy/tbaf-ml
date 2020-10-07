@@ -34,8 +34,7 @@ from sklearn.exceptions import ConvergenceWarning
 
 from sklearn.base import is_classifier, clone
 from sklearn.model_selection._split import check_cv
-from sklearn.model_selection._validation import (_aggregate_score_dicts,
-                                                 _fit_and_score)
+from sklearn.model_selection._validation import _aggregate_score_dicts
 from sklearn.metrics._scorer import _check_multimetric_scoring
 from sklearn.utils.validation import indexable, _check_fit_params
 
@@ -969,36 +968,6 @@ def iterativeGridSearchCV(clf, paramspecs, scorers, data, cls,
     
     return(gs)
 
-def plot_cv_indices(cv, X, y, group, ax, n_splits, lw=10):
-    """Create a sample plot for indices of a cross-validation object."""
-
-    # Generate the training/testing visualizations for each CV split
-    for ii, (tr, tt) in enumerate(cv.split(X=X, y=y, groups=group)):
-        # Fill in indices with the training/test groups
-        indices = np.array([np.nan] * len(X))
-        indices[tt] = 1
-        indices[tr] = 0
-
-        # Visualize the results
-        ax.scatter(range(len(indices)), [ii + .5] * len(indices),
-                   c=indices, marker='_', lw=lw, cmap=cmap_cv,
-                   vmin=-.2, vmax=1.2)
-
-    # Plot the data classes and groups at the end
-    ax.scatter(range(len(X)), [ii + 1.5] * len(X),
-               c=y, marker='_', lw=lw, cmap=cmap_data)
-
-    ax.scatter(range(len(X)), [ii + 2.5] * len(X),
-               c=group, marker='_', lw=lw, cmap=cmap_data)
-
-    # Formatting
-    yticklabels = list(range(n_splits)) + ['class', 'group']
-    ax.set(yticks=np.arange(n_splits+2) + .5, yticklabels=yticklabels,
-           xlabel='Sample index', ylabel="CV iteration",
-           ylim=[n_splits+2.2, -.2])
-    ax.set_title('{}'.format(type(cv).__name__), fontsize=15)
-    return ax
-
 def getcliargs(arglist = None):
     
     parser = argparse.ArgumentParser(description="""
@@ -1067,8 +1036,8 @@ def main():
                               ]
                             )
     
-    linsvc_params = {'C': 10.0 ** np.arange(-8, 3),
-                     'tol': 10.0 ** np.arange(-6, 1, 2)}
+    linsvc_params = {'C': 10.0 ** np.arange(-7, 3),
+                     'tol': 10.0 ** np.arange(-4, 0)}
     
 #    param_grid = [
 #            {'reduce_dim': [feature_selection.GenericUnivariateSelect(
@@ -1083,7 +1052,7 @@ def main():
             {'reduce_dim': [feature_selection.GenericUnivariateSelect(
                             score_func = feature_selection.f_classif)],
             'reduce_dim__mode': ['fpr'],
-            'reduce_dim__param': [0.01, 0.05, 0.1]
+            'reduce_dim__param': [0.01, 0.05]
             }]
     
     param_grid = [
