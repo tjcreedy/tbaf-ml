@@ -55,7 +55,15 @@ blastn -query ASVs.fasta -db refdb.fasta -evalue 0.001 -perc_identity 100 -num_t
 We filter the matches to find only those that match at sufficient length
 ```
 awk '$4 > 380' ASVs_v_refdb.blast.txt | cut -f1 | sort | uniq > ASVs_refmatch.txt
-rm ASVs_v_refdb.blast.txt
+```
+The same approach could be used with a local version of GenBank if desired. It is strongly suggested that only very very high likelihood matches be retained. This step is optional
+```
+blastn -query ASVs.fasta -db /path/to/nt -evalue 0.001 -perc_identity 100 -num_threads 10 -outfmt 6 -out ASVs_v_nt.blast.txt
+cat ASVs_v_refdb.blast.txt ASVs_v_nt.blast.txt | awk '$4 > 380' | cut -f1 | sort | uniq > ASVs_refmatch.txt
+```
+Clean up
+```
+rm ASVs_v_refdb.blast.txt ASVs_v_nt.blast.txt
 ```
 
 ### Identify spurious sequences
